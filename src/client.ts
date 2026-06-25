@@ -1,5 +1,6 @@
 /**
- * MalvoClient — the Malvo data API client.
+ * MalvoClient — the Malvo data API client. One method per data-plane endpoint,
+ * with positional arguments:
  *
  * ```ts
  * import { MalvoClient } from "@malvo/server";
@@ -9,8 +10,15 @@
  *   clientSecret: process.env.MALVO_CLIENT_SECRET!,
  * });
  *
- * const connectors = await malvo.fetchConnectors({ sandbox: true });
+ * const { results: connectors } = await malvo.fetchConnectors({ sandbox: true });
+ * const accounts = await malvo.fetchAccounts(item.id);
+ * const txs = await malvo.fetchAllTransactions(accounts.results[0].id);
  * ```
+ *
+ * Malvo is **data-only**: there is no payment-initiation (ITP) surface. Beyond
+ * the core collection endpoints there are a few extras (`fetchAccountBalance`,
+ * `triggerItemRefresh`, category rules, merchants and the intelligence endpoints
+ * `fetchItemInsights` / `enrichTransactions` / `fetchRecurringPayments`).
  *
  * The apiKey is managed internally (lazy `POST /auth`, cached, proactively
  * refreshed, retried on 401). Every method throws {@link MalvoApiError} on a
@@ -18,35 +26,44 @@
  */
 import { HttpClient } from "./http";
 import type {
+  Account,
   AccountBalance,
+  AccountStatement,
   AccountType,
   Category,
   ClientCategoryRule,
+  Connector,
   ConnectorFilters,
   Consent,
+  ConsentFilters,
+  ConnectTokenOptions,
   CreateCategoryRuleRequest,
-  CreateConnectTokenOptions,
-  CreateItemRequest,
-  CreateWebhookRequest,
-  CreditCardBill,
-  Cursor,
-  InvestmentFilters,
+  CreateItemOptions,
+  CreditCardBills,
+  CursorPageResponse,
+  EnrichTransactionInput,
+  EnrichedTransaction,
+  IdentityResponse,
+  Investment,
+  InvestmentsFilters,
   InvestmentTransaction,
-  MalvoAccount,
+  InvestmentType,
+  Item,
+  ItemInsights,
+  Loan,
   MalvoClientOptions,
-  MalvoConnector,
-  MalvoIdentity,
-  MalvoInvestment,
-  MalvoItem,
-  MalvoLoan,
-  MalvoTransaction,
   MerchantsResponse,
-  Paginated,
+  PageFilters,
+  PageResponse,
+  Parameters,
+  RecurringPayment,
+  Transaction,
   TransactionCursorFilters,
-  TransactionPageFilters,
-  UpdateItemRequest,
-  UpdateWebhookRequest,
+  TransactionFilters,
+  UpdateItemOptions,
+  UpdateWebhook,
   Webhook,
+  WebhookEventType,
 } from "./types";
 
 export class MalvoClient {
@@ -64,150 +81,278 @@ export class MalvoClient {
   /* ----- Connect token --------------------------------------------- */
 
   /**
-   * Mint a 30-minute connect token for the hosted widget. Pass `itemId` for an
-   * update-mode token. Returns `{ accessToken }`.
+   * Mint a 30-minute connect token for the hosted widget. Pass `itemId` to mint
+   * an update-mode token. Returns `{ accessToken }`.
    */
-  createConnectToken(options: CreateConnectTokenOptions = {}): Promise<{ accessToken: string }> {
-    const { itemId, ...opts } = options;
-    return this.http.request("POST", "/connect_token", { body: { itemId, options: opts } });
+  createConnectToken(
+    itemId?: string,
+    options: ConnectTokenOptions = {},
+  ): Promise<{ accessToken: string }> {
+    return this.http.request("POST", "/connect_token", { body: { itemId, options } });
   }
 
   /* ----- Connectors ------------------------------------------------- */
 
-  fetchConnectors(filters: ConnectorFilters = {}): Promise<Paginated<MalvoConnector>> {
+  fetchConnectors(options: ConnectorFilters = {}): Promise<PageResponse<Connector>> {
     return this.http.request("GET", "/connectors", {
       query: {
-        name: filters.name,
-        countries: filters.countries,
-        types: filters.types,
-        products: filters.products,
-        ids: filters.ids,
-        sandbox: filters.sandbox,
-        isOpenFinance: filters.isOpenFinance,
-        supportsPaymentInitiation: filters.supportsPaymentInitiation,
+        name: options.name,
+        countries: options.countries,
+        types: options.types,
+        products: options.products,
+        ids: options.ids,
+        sandbox: options.sandbox,
+        isOpenFinance: options.isOpenFinance,
+        supportsPaymentInitiation: options.supportsPaymentInitiation,
       },
     });
   }
 
-  fetchConnector(id: number): Promise<MalvoConnector> {
+  fetchConnector(id: number): Promise<Connector> {
     return this.http.request("GET", `/connectors/${id}`);
   }
 
   /* ----- Items ------------------------------------------------------ */
 
-  createItem(body: CreateItemRequest): Promise<MalvoItem> {
-    return this.http.request("POST", "/items", { body });
+  createItem(
+    connectorId: number,
+    parameters?: Parameters,
+    options: CreateItemOptions = {},
+  ): Promise<Item> {
+    return this.http.request("POST", "/items", {
+      body: {
+        connectorId,
+        parameters,
+        webhookUrl: options.webhookUrl,
+        clientUserId: options.clientUserId,
+        products: options.products,
+        oauthRedirectUri: options.oauthRedirectUri,
+      },
+    });
   }
 
-  fetchItem(id: string): Promise<MalvoItem> {
+  fetchItem(id: string): Promise<Item> {
     return this.http.request("GET", `/items/${id}`);
   }
 
   /** PATCH an item (re-auth, update credentials/products) — re-triggers a sync. */
-  updateItem(id: string, body: UpdateItemRequest = {}): Promise<MalvoItem> {
-    return this.http.request("PATCH", `/items/${id}`, { body });
+  updateItem(
+    id: string,
+    parameters?: Parameters,
+    options: UpdateItemOptions = {},
+  ): Promise<Item> {
+    return this.http.request("PATCH", `/items/${id}`, {
+      body: {
+        parameters,
+        webhookUrl: options.webhookUrl,
+        oauthRedirectUri: options.oauthRedirectUri,
+        connectorId: options.connectorId,
+      },
+    });
   }
 
   deleteItem(id: string): Promise<void> {
     return this.http.request("DELETE", `/items/${id}`);
   }
 
-  /** Trigger an immediate re-sync without changing credentials. */
-  triggerItemRefresh(id: string): Promise<MalvoItem> {
-    return this.http.request("POST", `/items/${id}/refresh`);
-  }
-
   /**
    * Answer an MFA / device challenge while the item is `WAITING_USER_INPUT`.
    * The keys of `parameters` are the connector credential `name`s (e.g. `token`).
    */
-  updateItemMFA(id: string, parameters: Record<string, string>): Promise<MalvoItem> {
+  updateItemMFA(id: string, parameters?: Parameters): Promise<Item> {
     return this.http.request("POST", `/items/${id}/mfa`, { body: { parameters } });
+  }
+
+  /** Malvo extension: trigger an immediate re-sync without changing credentials. */
+  triggerItemRefresh(id: string): Promise<Item> {
+    return this.http.request("POST", `/items/${id}/refresh`);
   }
 
   /* ----- Accounts --------------------------------------------------- */
 
-  fetchAccounts(params: { itemId: string; type?: AccountType }): Promise<Paginated<MalvoAccount>> {
-    return this.http.request("GET", "/accounts", {
-      query: { itemId: params.itemId, type: params.type },
-    });
+  fetchAccounts(itemId: string, type?: AccountType): Promise<PageResponse<Account>> {
+    return this.http.request("GET", "/accounts", { query: { itemId, type } });
   }
 
-  fetchAccount(id: string): Promise<MalvoAccount> {
+  fetchAccount(id: string): Promise<Account> {
     return this.http.request("GET", `/accounts/${id}`);
   }
 
-  /** Live balance — Open Finance connectors only. */
+  /** Live balance — Open Finance connectors only. Malvo extension. */
   fetchAccountBalance(id: string): Promise<AccountBalance> {
     return this.http.request("GET", `/accounts/${id}/balance`);
   }
 
+  /** Monthly statement files for an account (Open Finance connectors). */
+  fetchAccountStatements(accountId: string): Promise<PageResponse<AccountStatement>> {
+    return this.http.request("GET", `/accounts/${accountId}/statements`);
+  }
+
   /* ----- Transactions ----------------------------------------------- */
 
-  /** Cursor-based listing (`GET /v2/transactions`) — the preferred endpoint. */
-  fetchTransactions(filters: TransactionCursorFilters): Promise<Cursor<MalvoTransaction>> {
-    return this.http.request("GET", "/v2/transactions", {
+  /** Page-based listing (`GET /transactions`). */
+  fetchTransactions(
+    accountId: string,
+    options: TransactionFilters = {},
+  ): Promise<PageResponse<Transaction>> {
+    return this.http.request("GET", "/transactions", {
       query: {
-        accountId: filters.accountId,
-        ids: filters.ids,
-        after: filters.after,
-        dateFrom: filters.dateFrom,
-        dateTo: filters.dateTo,
-        createdAtFrom: filters.createdAtFrom,
+        accountId,
+        ids: options.ids,
+        from: options.from,
+        to: options.to,
+        createdAtFrom: options.createdAtFrom,
+        page: options.page,
+        pageSize: options.pageSize,
       },
     });
   }
 
-  /** Iterate every transaction across all cursor pages. */
-  async *fetchAllTransactions(
-    filters: TransactionCursorFilters,
-  ): AsyncGenerator<MalvoTransaction, void, unknown> {
-    let after = filters.after;
+  /** Cursor-based listing (`GET /v2/transactions`) — the preferred endpoint. */
+  fetchTransactionsCursor(
+    accountId: string,
+    options: TransactionCursorFilters = {},
+  ): Promise<CursorPageResponse<Transaction>> {
+    return this.http.request("GET", "/v2/transactions", {
+      query: {
+        accountId,
+        ids: options.ids,
+        after: options.after,
+        dateFrom: options.dateFrom,
+        dateTo: options.dateTo,
+        createdAtFrom: options.createdAtFrom,
+      },
+    });
+  }
+
+  /** Collect every transaction for an account across all cursor pages. */
+  async fetchAllTransactions(
+    accountId: string,
+    options: Omit<TransactionCursorFilters, "after"> = {},
+  ): Promise<Transaction[]> {
+    const all: Transaction[] = [];
+    let after: string | undefined;
     do {
-      const page = await this.fetchTransactions({ ...filters, after });
+      const page = await this.fetchTransactionsCursor(accountId, { ...options, after });
+      all.push(...page.results);
+      after = nextCursor(page.next);
+    } while (after);
+    return all;
+  }
+
+  /** Malvo extension: lazily iterate every transaction across all cursor pages. */
+  async *streamTransactions(
+    accountId: string,
+    options: Omit<TransactionCursorFilters, "after"> = {},
+  ): AsyncGenerator<Transaction, void, unknown> {
+    let after: string | undefined;
+    do {
+      const page = await this.fetchTransactionsCursor(accountId, { ...options, after });
       for (const tx of page.results) yield tx;
       after = nextCursor(page.next);
     } while (after);
   }
 
-  /** Collect every transaction across all cursor pages into one array. */
-  async collectAllTransactions(filters: TransactionCursorFilters): Promise<MalvoTransaction[]> {
-    const all: MalvoTransaction[] = [];
-    for await (const tx of this.fetchAllTransactions(filters)) all.push(tx);
-    return all;
-  }
-
-  /**
-   * Page-based listing (`GET /transactions`). Deprecated in favour of
-   * {@link fetchTransactions}; kept for parity.
-   */
-  fetchTransactionsPaginated(
-    filters: TransactionPageFilters,
-  ): Promise<Paginated<MalvoTransaction>> {
-    return this.http.request("GET", "/transactions", {
-      query: {
-        accountId: filters.accountId,
-        ids: filters.ids,
-        from: filters.from,
-        to: filters.to,
-        createdAtFrom: filters.createdAtFrom,
-        page: filters.page,
-        pageSize: filters.pageSize,
-      },
-    });
-  }
-
-  fetchTransaction(id: string): Promise<MalvoTransaction> {
+  fetchTransaction(id: string): Promise<Transaction> {
     return this.http.request("GET", `/transactions/${id}`);
   }
 
-  updateTransactionCategory(id: string, categoryId: string): Promise<MalvoTransaction> {
+  updateTransactionCategory(id: string, categoryId: string): Promise<Transaction> {
     return this.http.request("PATCH", `/transactions/${id}`, { body: { categoryId } });
+  }
+
+  /* ----- Investments ------------------------------------------------ */
+
+  fetchInvestments(
+    itemId: string,
+    type?: InvestmentType,
+    options: InvestmentsFilters = {},
+  ): Promise<PageResponse<Investment>> {
+    return this.http.request("GET", "/investments", {
+      query: { itemId, type, page: options.page, pageSize: options.pageSize },
+    });
+  }
+
+  fetchInvestment(id: string): Promise<Investment> {
+    return this.http.request("GET", `/investments/${id}`);
+  }
+
+  fetchInvestmentTransactions(
+    investmentId: string,
+    options: PageFilters = {},
+  ): Promise<PageResponse<InvestmentTransaction>> {
+    return this.http.request("GET", `/investments/${investmentId}/transactions`, {
+      query: { page: options.page, pageSize: options.pageSize },
+    });
+  }
+
+  /** Collect every investment transaction across all pages. */
+  async fetchAllInvestmentTransactions(
+    investmentId: string,
+  ): Promise<InvestmentTransaction[]> {
+    const all: InvestmentTransaction[] = [];
+    let page = 1;
+    for (;;) {
+      const res = await this.fetchInvestmentTransactions(investmentId, { page, pageSize: 500 });
+      all.push(...res.results);
+      if (page >= res.totalPages || res.results.length === 0) break;
+      page++;
+    }
+    return all;
+  }
+
+  /* ----- Identity --------------------------------------------------- */
+
+  fetchIdentity(id: string): Promise<IdentityResponse> {
+    return this.http.request("GET", `/identity/${id}`);
+  }
+
+  fetchIdentityByItemId(itemId: string): Promise<IdentityResponse> {
+    return this.http.request("GET", "/identity", { query: { itemId } });
+  }
+
+  /* ----- Loans ------------------------------------------------------ */
+
+  fetchLoans(itemId: string, options: PageFilters = {}): Promise<PageResponse<Loan>> {
+    return this.http.request("GET", "/loans", {
+      query: { itemId, page: options.page, pageSize: options.pageSize },
+    });
+  }
+
+  fetchLoan(id: string): Promise<Loan> {
+    return this.http.request("GET", `/loans/${id}`);
+  }
+
+  /* ----- Credit-card bills ------------------------------------------ */
+
+  fetchCreditCardBills(
+    accountId: string,
+    options: PageFilters = {},
+  ): Promise<PageResponse<CreditCardBills>> {
+    return this.http.request("GET", "/bills", {
+      query: { accountId, page: options.page, pageSize: options.pageSize },
+    });
+  }
+
+  fetchCreditCardBill(id: string): Promise<CreditCardBills> {
+    return this.http.request("GET", `/bills/${id}`);
+  }
+
+  /* ----- Consents --------------------------------------------------- */
+
+  fetchConsents(itemId: string, options: ConsentFilters = {}): Promise<PageResponse<Consent>> {
+    return this.http.request("GET", "/consents", {
+      query: { itemId, page: options.page, pageSize: options.pageSize },
+    });
+  }
+
+  fetchConsent(id: string): Promise<Consent> {
+    return this.http.request("GET", `/consents/${id}`);
   }
 
   /* ----- Categories ------------------------------------------------- */
 
-  fetchCategories(): Promise<Paginated<Category>> {
+  fetchCategories(): Promise<PageResponse<Category>> {
     return this.http.request("GET", "/categories");
   }
 
@@ -215,83 +360,19 @@ export class MalvoClient {
     return this.http.request("GET", `/categories/${id}`);
   }
 
-  fetchCategorizationRules(): Promise<Paginated<ClientCategoryRule>> {
+  /** Malvo extension: list the application's custom categorization rules. */
+  fetchCategorizationRules(): Promise<PageResponse<ClientCategoryRule>> {
     return this.http.request("GET", "/categories/rules");
   }
 
+  /** Malvo extension: create a custom categorization rule. */
   createCategorizationRule(body: CreateCategoryRuleRequest): Promise<{ created: boolean }> {
     return this.http.request("POST", "/categories/rules", { body });
   }
 
-  /* ----- Identity --------------------------------------------------- */
-
-  fetchIdentityByItemId(itemId: string): Promise<MalvoIdentity> {
-    return this.http.request("GET", "/identity", { query: { itemId } });
-  }
-
-  fetchIdentity(id: string): Promise<MalvoIdentity> {
-    return this.http.request("GET", `/identity/${id}`);
-  }
-
-  /* ----- Investments ------------------------------------------------ */
-
-  fetchInvestments(filters: InvestmentFilters = {}): Promise<Paginated<MalvoInvestment>> {
-    return this.http.request("GET", "/investments", {
-      query: {
-        itemId: filters.itemId,
-        type: filters.type,
-        page: filters.page,
-        pageSize: filters.pageSize,
-      },
-    });
-  }
-
-  fetchInvestment(id: string): Promise<MalvoInvestment> {
-    return this.http.request("GET", `/investments/${id}`);
-  }
-
-  fetchInvestmentTransactions(
-    id: string,
-    params: { page?: number; pageSize?: number } = {},
-  ): Promise<Paginated<InvestmentTransaction>> {
-    return this.http.request("GET", `/investments/${id}/transactions`, {
-      query: { page: params.page, pageSize: params.pageSize },
-    });
-  }
-
-  /* ----- Loans ------------------------------------------------------ */
-
-  fetchLoans(params: { itemId: string }): Promise<Paginated<MalvoLoan>> {
-    return this.http.request("GET", "/loans", { query: { itemId: params.itemId } });
-  }
-
-  fetchLoan(id: string): Promise<MalvoLoan> {
-    return this.http.request("GET", `/loans/${id}`);
-  }
-
-  /* ----- Bills ------------------------------------------------------ */
-
-  fetchBills(params: { accountId: string }): Promise<Paginated<CreditCardBill>> {
-    return this.http.request("GET", "/bills", { query: { accountId: params.accountId } });
-  }
-
-  fetchBill(id: string): Promise<CreditCardBill> {
-    return this.http.request("GET", `/bills/${id}`);
-  }
-
-  /* ----- Consents --------------------------------------------------- */
-
-  fetchConsents(params: { itemId: string }): Promise<Paginated<Consent>> {
-    return this.http.request("GET", "/consents", { query: { itemId: params.itemId } });
-  }
-
-  fetchConsent(id: string): Promise<Consent> {
-    return this.http.request("GET", `/consents/${id}`);
-  }
-
   /* ----- Webhooks --------------------------------------------------- */
 
-  fetchWebhooks(): Promise<Paginated<Webhook>> {
+  fetchWebhooks(): Promise<PageResponse<Webhook>> {
     return this.http.request("GET", "/webhooks");
   }
 
@@ -299,23 +380,54 @@ export class MalvoClient {
     return this.http.request("GET", `/webhooks/${id}`);
   }
 
-  createWebhook(body: CreateWebhookRequest): Promise<Webhook> {
-    return this.http.request("POST", "/webhooks", { body });
+  createWebhook(
+    event: WebhookEventType,
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<Webhook> {
+    return this.http.request("POST", "/webhooks", { body: { url, event, headers } });
   }
 
-  updateWebhook(id: string, body: UpdateWebhookRequest): Promise<Webhook> {
-    return this.http.request("PATCH", `/webhooks/${id}`, { body });
+  updateWebhook(id: string, updatedWebhookParams: UpdateWebhook): Promise<Webhook> {
+    return this.http.request("PATCH", `/webhooks/${id}`, { body: updatedWebhookParams });
   }
 
   deleteWebhook(id: string): Promise<void> {
     return this.http.request("DELETE", `/webhooks/${id}`);
   }
 
-  /* ----- Merchants -------------------------------------------------- */
+  /* ----- Merchants (Malvo extension) -------------------------------- */
 
   /** Look up merchants by CNPJ (digits only). */
   fetchMerchants(cnpjs: string[]): Promise<MerchantsResponse> {
     return this.http.request("GET", "/merchants", { query: { cnpjs } });
+  }
+
+  /* ----- Intelligence & enrichment (Malvo extensions) --------------- */
+
+  /** Per-item aggregated insights (`POST /book`). */
+  fetchItemInsights(itemIds: string[]): Promise<ItemInsights[]> {
+    return this.http.request("POST", "/book", { query: { itemIds } });
+  }
+
+  /**
+   * Categorize/enrich client-supplied transactions without persisting them
+   * (`POST /categorization`). Up to 5000 transactions per request.
+   */
+  async enrichTransactions(
+    transactions: EnrichTransactionInput[],
+  ): Promise<EnrichedTransaction[]> {
+    const res = await this.http.request<{ results: EnrichedTransaction[] }>(
+      "POST",
+      "/categorization",
+      { body: { transactions } },
+    );
+    return res.results;
+  }
+
+  /** Detect recurring charges (subscriptions, salary, utilities) for an item. */
+  fetchRecurringPayments(itemId: string): Promise<RecurringPayment[]> {
+    return this.http.request("POST", "/recurring-payments", { body: { itemId } });
   }
 }
 

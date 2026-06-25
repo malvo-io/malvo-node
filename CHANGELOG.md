@@ -1,3 +1,41 @@
+## 0.2.0
+
+**Positional surface.** `MalvoClient` methods now take positional arguments
+instead of single option objects, aligning the whole data plane on one calling
+convention.
+
+- **Breaking — positional args replace option objects:**
+  - `createConnectToken(itemId?, options?)` (was `createConnectToken(options)`).
+  - `createItem(connectorId, parameters?, options?)` (was `createItem(body)`).
+  - `updateItem(id, parameters?, options?)` (was `updateItem(id, body)`).
+  - `fetchAccounts(itemId, type?)` (was `fetchAccounts({ itemId, type })`).
+  - `fetchInvestments(itemId, type?, options?)`, `fetchLoans(itemId, options?)`,
+    `fetchConsents(itemId, options?)` (were single-object filters).
+  - `createWebhook(event, url, headers?)` (was `createWebhook(body)`).
+- **Breaking — transaction methods realigned:**
+  - `fetchTransactions(accountId, options?)` is now the **page-based**
+    `GET /transactions` (was the cursor endpoint).
+  - `fetchTransactionsCursor(accountId, options?)` is the cursor
+    `GET /v2/transactions`.
+  - `fetchAllTransactions(accountId, options?)` now **returns `Transaction[]`**
+    (was an async generator). The lazy iterator moved to `streamTransactions`.
+    `collectAllTransactions` was removed (use `fetchAllTransactions`).
+- **Breaking — bill methods renamed:** `fetchCreditCardBills(accountId, options?)`
+  / `fetchCreditCardBill(id)` (were `fetchBills` / `fetchBill`).
+- **New endpoints (full backend parity):**
+  - `fetchAccountStatements(accountId)` → `GET /accounts/{id}/statements`.
+  - `fetchAllInvestmentTransactions(investmentId)` collects every page.
+  - `fetchItemInsights(itemIds)` → `POST /book`.
+  - `enrichTransactions(transactions)` → `POST /categorization`.
+  - `fetchRecurringPayments(itemId)` → `POST /recurring-payments`.
+- **New type aliases:** `Item`, `Account`, `Transaction`, `Connector`,
+  `Investment`, `Loan`, `Identity`/`IdentityResponse`, `CreditCardBills`,
+  `ProductType`, `PageResponse`, `CursorPageResponse`, `Parameters`,
+  `ConnectTokenOptions`, `CreateItemOptions`, `TransactionFilters`,
+  `TransactionCursorFilters`, `InvestmentsFilters`, `ConsentFilters`,
+  `PageFilters`, `AccountStatement`. Old names (`Malvo*`, `Paginated`, `Cursor`,
+  `Create*Request`) are kept as `@deprecated` aliases.
+
 ## 0.1.1
 
 - **100% backend parity**, validated end-to-end against the live API:

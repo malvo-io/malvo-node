@@ -9,6 +9,17 @@ merchants — plus minting connect tokens for the hosted widget.
 Talks to a single host: `https://api.malvo.io`. **Data aggregation only** — no
 payment initiation.
 
+Methods take **positional** arguments and return paged envelopes:
+
+```ts
+const accounts = await malvo.fetchAccounts(itemId);
+const txs = await malvo.fetchAllTransactions(accounts.results[0].id);
+```
+
+Short, un-prefixed type names are exported alongside the `Malvo*` ones (`Item`,
+`Account`, `Transaction`, `Connector`, `Investment`, `Loan`, `IdentityResponse`,
+`CreditCardBills`, `PageResponse`, …).
+
 ## Install
 
 ```bash
@@ -57,7 +68,9 @@ const malvo = new MalvoClient({
 const app = express();
 
 app.post("/api/malvo/connect-token", async (req, res) => {
-  const { accessToken } = await malvo.createConnectToken({
+  // createConnectToken(itemId?, options?) — pass an itemId to mint an
+  // update-mode token; omit it (undefined) for a new connection.
+  const { accessToken } = await malvo.createConnectToken(undefined, {
     clientUserId: req.user.id,
     webhookUrl: process.env.MALVO_WEBHOOK_URL,
   });
@@ -68,20 +81,24 @@ app.post("/api/malvo/connect-token", async (req, res) => {
 ## Reading data
 
 After the `item/created` / `item/updated` webhook fires, read the item's data.
-Transactions use a cursor — `fetchAllTransactions` paginates it for you:
+`fetchAllTransactions(accountId)` walks the cursor and returns every
+transaction in one array:
 
 ```ts
-const { results: accounts } = await malvo.fetchAccounts({ itemId });
+const { results: accounts } = await malvo.fetchAccounts(itemId);
 
 for (const account of accounts) {
-  for await (const tx of malvo.fetchAllTransactions({ accountId: account.id })) {
+  const txs = await malvo.fetchAllTransactions(account.id);
+  for (const tx of txs) {
     console.log(tx.date, tx.description, tx.amount);
   }
 }
 ```
 
-Or grab a single page (`fetchTransactions` returns `{ results, next }`), or
-collect everything at once with `collectAllTransactions({ accountId })`.
+Or grab a single page: `fetchTransactions(accountId, options)` (page-based,
+`{ results, total, page, totalPages }`) or `fetchTransactionsCursor(accountId,
+options)` (cursor-based, `{ results, next }`). For huge accounts,
+`streamTransactions(accountId)` is an async iterator that pages lazily.
 
 ## Error handling
 

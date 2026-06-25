@@ -12,7 +12,7 @@
 /* ------------------------------------------------------------------ */
 
 /** Page-based list envelope (every list endpoint except `/v2/transactions`). */
-export interface Paginated<T> {
+export interface PageResponse<T> {
   results: T[];
   total: number;
   page: number;
@@ -22,12 +22,17 @@ export interface Paginated<T> {
 /**
  * Cursor list envelope (`GET /v2/transactions`). `next` is an opaque query-string
  * fragment (e.g. `"?accountId=...&after=..."`) or `null` when there are no more
- * pages. Prefer {@link MalvoClient.fetchAllTransactions} to iterate it.
+ * pages. Prefer {@link MalvoClient.fetchAllTransactions} to collect it.
  */
-export interface Cursor<T> {
+export interface CursorPageResponse<T> {
   results: T[];
   next: string | null;
 }
+
+/** @deprecated Use {@link PageResponse}. Kept for back-compat. */
+export type Paginated<T> = PageResponse<T>;
+/** @deprecated Use {@link CursorPageResponse}. */
+export type Cursor<T> = CursorPageResponse<T>;
 
 /* ------------------------------------------------------------------ */
 /* Enums                                                               */
@@ -885,66 +890,102 @@ export interface MalvoClientOptions {
 }
 
 export interface ConnectorFilters {
+  /** Connector name or alike name. */
   name?: string;
+  /** Country codes to filter available connectors (e.g. `["BR"]`). */
   countries?: string[];
   types?: ConnectorType[];
-  products?: Product[];
-  ids?: number[];
+  /** Recover sandbox connectors. Default `false`. */
   sandbox?: boolean;
+  /** Filter in (`true`) or out (`false`) Open Finance connectors. */
   isOpenFinance?: boolean;
+  /** Filter in/out payment-initiation connectors (always data-only on Malvo). */
   supportsPaymentInitiation?: boolean;
+  /** Malvo extension: filter by connector ids. */
+  ids?: number[];
+  /** Malvo extension: filter by supported products. */
+  products?: Product[];
 }
 
-export interface CreateConnectTokenOptions {
-  /** Pass an existing itemId to mint an update-mode token. */
-  itemId?: string;
-  clientUserId?: string;
+/** Plain `{ name: value }` map of connector credentials / MFA answers. */
+export type Parameters = Record<string, string>;
+
+/** Page-based list filters (`page` / `pageSize`, max `pageSize` 500). */
+export interface PageFilters {
+  page?: number;
+  pageSize?: number;
+}
+
+/** Options for {@link MalvoClient.createConnectToken}. */
+export interface ConnectTokenOptions {
+  /** Url where item-event notifications will be sent. */
   webhookUrl?: string;
+  /** A unique identifier for your end-user, echoed back on the item. */
+  clientUserId?: string;
+  /** Redirect URI for the Open Finance OAuth flow. */
   oauthRedirectUri?: string;
+  /** Avoid creating duplicate items for the same user. */
   avoidDuplicates?: boolean;
+  /** Sort connectors A–Z in the widget instead of analytics order. */
+  connectorSortAlphabetically?: boolean;
+  /** Restrict the products the widget may collect. */
   products?: Product[];
 }
 
-export interface CreateItemRequest {
-  connectorId: number;
-  parameters?: Record<string, string>;
+/** Options for {@link MalvoClient.createItem}. */
+export interface CreateItemOptions {
+  /** Url where item-event notifications will be sent. */
   webhookUrl?: string;
+  /** A unique identifier for your end-user. */
   clientUserId?: string;
+  /** Products to include in execution/collection. Defaults to the connector's. */
   products?: Product[];
+  /** Avoid creating a duplicate item for the same user. */
+  avoidDuplicates?: boolean;
+  /** Redirect URI for the Open Finance OAuth flow. */
   oauthRedirectUri?: string;
 }
 
-export interface UpdateItemRequest {
-  parameters?: Record<string, string>;
-  webhookUrl?: string;
-  oauthRedirectUri?: string;
+/**
+ * Options for {@link MalvoClient.updateItem}. Superset of {@link CreateItemOptions}:
+ * `connectorId` binds an imported snapshot to a real Open Finance connector at
+ * adoption time.
+ */
+export interface UpdateItemOptions extends CreateItemOptions {
+  connectorId?: number;
 }
 
-export interface TransactionCursorFilters {
-  accountId: string;
-  ids?: string[];
-  after?: string;
-  dateFrom?: string;
-  dateTo?: string;
-  createdAtFrom?: string;
-}
-
-export interface TransactionPageFilters {
-  accountId: string;
-  ids?: string[];
-  from?: string;
+/** Page-based transaction filters (`GET /transactions`). */
+export interface TransactionFilters extends PageFilters {
+  /** Filter `date <= to`. ISO date or `YYYY-MM-DD`. */
   to?: string;
+  /** Filter `date >= from`. ISO date or `YYYY-MM-DD`. */
+  from?: string;
+  /** Filter `createdAt >= createdAtFrom`. Mutually exclusive with `from`. */
   createdAtFrom?: string;
-  page?: number;
-  pageSize?: number;
+  /** Filter to specific transaction ids (max 500). */
+  ids?: string[];
 }
 
-export interface InvestmentFilters {
-  itemId?: string;
-  type?: InvestmentType;
-  page?: number;
-  pageSize?: number;
+/** Cursor transaction filters (`GET /v2/transactions`). */
+export interface TransactionCursorFilters {
+  /** Filter `date >= dateFrom`. Mutually exclusive with `createdAtFrom`. */
+  dateFrom?: string;
+  /** Filter `date <= dateTo`. */
+  dateTo?: string;
+  /** Filter `createdAt >= createdAtFrom`. Mutually exclusive with `dateFrom`. */
+  createdAtFrom?: string;
+  /** Opaque cursor from the previous page's `next`. */
+  after?: string;
+  /** Filter to specific transaction ids (max 500). */
+  ids?: string[];
 }
+
+/** Investment list filters. */
+export type InvestmentsFilters = PageFilters;
+
+/** Consent list filters. */
+export type ConsentFilters = PageFilters;
 
 export interface CreateCategoryRuleRequest {
   description: string;
@@ -954,14 +995,8 @@ export interface CreateCategoryRuleRequest {
   accountType?: "CHECKING_ACCOUNT" | "CREDIT_CARD";
 }
 
-export interface CreateWebhookRequest {
-  url: string;
-  event: WebhookEventType;
-  headers?: Record<string, string>;
-  enabled?: boolean;
-}
-
-export interface UpdateWebhookRequest {
+/** Params accepted by {@link MalvoClient.updateWebhook}. */
+export interface UpdateWebhook {
   url?: string;
   event?: WebhookEventType;
   headers?: Record<string, string>;
@@ -971,3 +1006,153 @@ export interface UpdateWebhookRequest {
 export interface ConnectTokenResponse {
   accessToken: string;
 }
+
+/* ------------------------------------------------------------------ */
+/* Account statements (`GET /accounts/{id}/statements`)                */
+/* ------------------------------------------------------------------ */
+
+/** A monthly account statement file (Open Finance connectors). */
+export interface AccountStatement {
+  id: string;
+  /** Month and year of the statement, e.g. `"2025-01"`. */
+  monthYear: string;
+  /** Signed URL to download the statement file, valid ~30 minutes. */
+  url: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Intelligence & enrichment                                           */
+/* ------------------------------------------------------------------ */
+
+/** One transaction submitted to {@link MalvoClient.enrichTransactions} (`POST /categorization`). */
+export interface EnrichTransactionInput {
+  id: string;
+  /** Signed amount. Credit-card convention: purchases positive, payments negative. */
+  amount: number;
+  /** ISO date or `YYYY-MM-DD`. */
+  date: string;
+  description: string;
+  /** `CHECKING_ACCOUNT` | `SAVINGS_ACCOUNT` | `CREDIT_CARD`. */
+  accountType?: AccountSubtype | string;
+  isBusinessAccount?: boolean;
+  paymentData?: {
+    payer?: { document?: string };
+    receiver?: { document?: string };
+  };
+  /** Merchant Category Code, used for credit-card enrichment. */
+  creditCardMcc?: number;
+}
+
+/** Result of enriching one transaction. */
+export interface EnrichedTransaction {
+  id: string;
+  amount: number;
+  date: string;
+  description: string;
+  type: TransactionType;
+  merchant?: { name?: string; businessName?: string; cnpj?: string };
+  category: string;
+}
+
+/** One aggregation window of {@link ItemInsights}. */
+export interface InsightWindow {
+  count: number;
+  amount: number;
+  avg: number;
+  min: number;
+  max: number;
+  creditDebitRatio: number;
+  categories: Record<string, number>;
+  byDate: Record<string, number>;
+  byAmount: Record<string, number>;
+  bySubtype: Record<string, number>;
+  byType: Record<string, number>;
+}
+
+/** Insight windows (`M1`, `M3`, `M12`, `allTime`). */
+export interface InsightWindows {
+  M1: InsightWindow;
+  M3: InsightWindow;
+  M12: InsightWindow;
+  allTime: InsightWindow;
+}
+
+/** Per-item insights returned by {@link MalvoClient.fetchItemInsights} (`POST /book`). */
+export interface ItemInsights {
+  itemId: string;
+  bankAccount?: InsightWindows;
+  creditCard?: InsightWindows;
+}
+
+/** A detected recurring charge (`POST /recurring-payments`). */
+export interface RecurringPayment {
+  /** Normalized description the group was keyed on. */
+  description: string;
+  averageAmount: number;
+  /** Transaction ids that make up the recurring series, oldest first. */
+  occurrences: string[];
+  /** Cadence regularity in `[0,1]`; 1 = perfectly even monthly cadence. */
+  regularityScore: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Type aliases                                                        */
+/*                                                                     */
+/* Short, un-prefixed names for the core data entities (the `Malvo*`   */
+/* names remain exported too).                                         */
+/* ------------------------------------------------------------------ */
+
+export type Item = MalvoItem;
+export type Account = MalvoAccount;
+export type Transaction = MalvoTransaction;
+export type Connector = MalvoConnector;
+export type Investment = MalvoInvestment;
+export type Loan = MalvoLoan;
+export type Identity = MalvoIdentity;
+/** Alias of {@link MalvoIdentity} for the identity payload. */
+export type IdentityResponse = MalvoIdentity;
+/** Alias of {@link CreditCardBill} (plural spelling). */
+export type CreditCardBills = CreditCardBill;
+/** Alias of {@link Product}. */
+export type ProductType = Product;
+
+/** @deprecated Use `(itemId, options)` positional args + {@link ConnectTokenOptions}. */
+export interface CreateConnectTokenOptions extends ConnectTokenOptions {
+  /** Pass an existing itemId to mint an update-mode token. */
+  itemId?: string;
+}
+
+/** @deprecated Use `createItem(connectorId, parameters, options)`. */
+export interface CreateItemRequest {
+  connectorId: number;
+  parameters?: Parameters;
+  webhookUrl?: string;
+  clientUserId?: string;
+  products?: Product[];
+  oauthRedirectUri?: string;
+}
+
+/** @deprecated Use `updateItem(id, parameters, options)`. */
+export interface UpdateItemRequest extends UpdateItemOptions {
+  parameters?: Parameters;
+}
+
+/** @deprecated Use {@link TransactionFilters} (the `accountId` is now positional). */
+export type TransactionPageFilters = TransactionFilters & { accountId?: string };
+
+/** @deprecated Use {@link InvestmentsFilters} (the `itemId`/`type` are now positional). */
+export interface InvestmentFilters extends PageFilters {
+  itemId?: string;
+  type?: InvestmentType;
+}
+
+/** @deprecated Use `createWebhook(event, url, headers)`. */
+export interface CreateWebhookRequest {
+  url: string;
+  event: WebhookEventType;
+  headers?: Record<string, string>;
+  enabled?: boolean;
+}
+
+/** @deprecated Use {@link UpdateWebhook}. */
+export type UpdateWebhookRequest = UpdateWebhook;
