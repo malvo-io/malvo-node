@@ -73,7 +73,7 @@ export type ExecutionStatus =
   | "ACCOUNTS_IN_PROGRESS"
   | "CREDITCARDS_IN_PROGRESS"
   | "TRANSACTIONS_IN_PROGRESS"
-  | "INVESTMENT_TRANSACTIONS_IN_PROGRESS"
+  | "INVESTMENTS_TRANSACTIONS_IN_PROGRESS"
   | "PAYMENT_DATA_IN_PROGRESS"
   | "IDENTITY_IN_PROGRESS"
   | "MERGING"
@@ -143,6 +143,10 @@ export type WebhookTriggeredBy = "USER" | "CLIENT" | "SYNC" | "INTERNAL";
 export type WebhookEventType =
   | "all"
   | FiredWebhookEventType
+  | "item/waiting_user_action"
+  | "scheduled_payment/all_completed"
+  | "scheduled_payment/all_created"
+  | "boleto/updated"
   | "payment_intent/created"
   | "payment_intent/waiting_payer_authorization"
   | "payment_intent/completed"
@@ -224,7 +228,12 @@ export interface MalvoConnector {
   products?: Product[];
   isSandbox?: boolean;
   isOpenFinance?: boolean;
+  /** Malvo is data-only, so the payment-capability flags are always `false`. */
   supportsPaymentInitiation?: boolean;
+  supportsScheduledPayments?: boolean;
+  supportsSmartTransfers?: boolean;
+  supportsAutomaticPix?: boolean;
+  supportsBoletoManagement?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -258,10 +267,12 @@ export interface ItemStatusDetail {
   creditCards?: ProductStatusDetail | null;
   transactions?: ProductStatusDetail | null;
   investments?: ProductStatusDetail | null;
-  investmentsTransactions?: ProductStatusDetail | null;
+  /** Official Pluggy key is `investmentTransactions` (singular "investment"). */
+  investmentTransactions?: ProductStatusDetail | null;
   identity?: ProductStatusDetail | null;
   loans?: ProductStatusDetail | null;
   paymentData?: ProductStatusDetail | null;
+  accountStatements?: ProductStatusDetail | null;
 }
 
 export interface MalvoItem {
@@ -528,6 +539,8 @@ export interface MalvoIdentity {
   itemId: string;
   fullName: string | null;
   companyName?: string;
+  socialName?: string | null;
+  companiesCnpj?: string[];
   document: string | null;
   /** Typically "CPF" | "CNPJ"; passed through verbatim. */
   documentType: string | null;
@@ -799,6 +812,8 @@ export interface CreditCardBill {
   allowsInstallments: boolean | null;
   financeCharges: BillFinanceCharge[];
   payments: BillPayment[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -835,7 +850,8 @@ export interface Consent {
   itemId: string;
   status: ConsentStatus;
   products: string[];
-  permissions: string[];
+  /** Official Pluggy wire key (was `permissions`). */
+  openFinancePermissionsGranted: string[];
   createdAt: string;
   updatedAt: string;
   expiresAt?: string | null;
@@ -876,7 +892,7 @@ export interface Webhook {
   url: string;
   createdAt: string;
   updatedAt: string;
-  disabled: string | null;
+  disabledAt: string | null;
 }
 
 /* ------------------------------------------------------------------ */
