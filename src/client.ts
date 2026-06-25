@@ -183,7 +183,14 @@ export class MalvoClient {
     return this.http.request("GET", `/accounts/${id}/balance`);
   }
 
-  /** Monthly statement files for an account (Open Finance connectors). */
+  /**
+   * Monthly statement files for an account (Open Finance connectors).
+   *
+   * @remarks Statement collection is not yet enabled on the backend: this
+   * endpoint currently responds `404 STATEMENTS_NOT_AVAILABLE`, so this method
+   * throws {@link MalvoApiError} until the feature ships. The route is in place
+   * so the method works unchanged once it does.
+   */
   fetchAccountStatements(accountId: string): Promise<PageResponse<AccountStatement>> {
     return this.http.request("GET", `/accounts/${accountId}/statements`);
   }

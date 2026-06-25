@@ -1,6 +1,6 @@
 {
   "name": "@malvo/server",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Node.js/TypeScript server SDK for the Malvo API (Open Finance Brasil) — manage items, accounts, transactions, investments and webhooks, and mint connect tokens.",
   "license": "MIT",
   "publishConfig": {

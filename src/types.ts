@@ -187,7 +187,7 @@ export interface ConnectorCredential {
   label: string;
   /** Field key to send back in `parameters` on `createItem` / `updateItemMFA`. */
   name: string;
-  type?: "text" | "password" | "number" | "image" | "select";
+  type?: "text" | "password" | "number" | "image" | "select" | "ethaddress" | "hcaptcha";
   mfa?: boolean;
   placeholder?: string;
   validation?: string;
@@ -250,7 +250,7 @@ export interface UserAction {
 export interface ProductStatusDetail {
   isUpdated: boolean;
   lastUpdatedAt: string | null;
-  warnings?: { code: string; message: string; providerMessage?: string | null }[];
+  warnings?: { code: string; message: string; providerMessage?: string | null }[] | null;
 }
 
 export interface ItemStatusDetail {
@@ -416,6 +416,16 @@ export interface TransactionPaymentParticipant {
   routingNumberISPB?: string | null;
 }
 
+/** Boleto detail, present on boleto-settled transactions. */
+export interface BoletoMetadata {
+  digitableLine?: string | null;
+  barcode?: string | null;
+  baseAmount?: number | null;
+  interestAmount?: number | null;
+  penaltyAmount?: number | null;
+  discountAmount?: number | null;
+}
+
 export interface TransactionPaymentData {
   payer?: TransactionPaymentParticipant | null;
   receiver?: TransactionPaymentParticipant | null;
@@ -424,6 +434,8 @@ export interface TransactionPaymentData {
   referenceNumber?: string | null;
   receiverReferenceId?: string | null;
   reason?: string | null;
+  /** Present when the movement settled a boleto. */
+  boletoMetadata?: BoletoMetadata | null;
 }
 
 export interface TransactionCreditCardMetadata {
@@ -926,8 +938,6 @@ export interface ConnectTokenOptions {
   oauthRedirectUri?: string;
   /** Avoid creating duplicate items for the same user. */
   avoidDuplicates?: boolean;
-  /** Sort connectors A–Z in the widget instead of analytics order. */
-  connectorSortAlphabetically?: boolean;
   /** Restrict the products the widget may collect. */
   products?: Product[];
 }

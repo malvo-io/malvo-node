@@ -1,3 +1,20 @@
+## 0.2.1
+
+Wire-parity fixes from an endpoint-by-endpoint audit against the backend's
+actual JSON output:
+
+- `Transaction.paymentData.boletoMetadata` is now typed (`BoletoMetadata`:
+  `digitableLine`, `barcode`, `baseAmount`, `interestAmount`, `penaltyAmount`,
+  `discountAmount`) — the backend emits it on boleto-settled movements.
+- `Item.statusDetail.<product>.warnings` is now `… [] | null` (the backend sends
+  `null`, not an absent key — guards an array-access NPE).
+- `ConnectorCredential.type` accepts `"ethaddress"` and `"hcaptcha"` (the backend
+  can emit them).
+- Removed `ConnectTokenOptions.connectorSortAlphabetically` — the backend ignores
+  it, so it advertised a no-op.
+- Documented that `fetchAccountStatements` currently returns
+  `404 STATEMENTS_NOT_AVAILABLE` (statement collection not yet enabled backend-side).
+
 ## 0.2.0
 
 **Positional surface.** `MalvoClient` methods now take positional arguments
