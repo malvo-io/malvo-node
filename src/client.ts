@@ -127,6 +127,7 @@ export class MalvoClient {
         clientUserId: options.clientUserId,
         products: options.products,
         oauthRedirectUri: options.oauthRedirectUri,
+        avoidDuplicates: options.avoidDuplicates,
       },
     });
   }
