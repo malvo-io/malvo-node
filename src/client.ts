@@ -15,10 +15,12 @@
  * const txs = await malvo.fetchAllTransactions(accounts.results[0].id);
  * ```
  *
- * Malvo is **data-only**: there is no payment-initiation (ITP) surface. Beyond
- * the core collection endpoints there are a few extras (`fetchAccountBalance`,
- * `triggerItemRefresh`, category rules, merchants and the intelligence endpoints
- * `fetchItemInsights` / `enrichTransactions` / `fetchRecurringPayments`).
+ * Beyond the core collection endpoints there are a few extras
+ * (`fetchAccountBalance`, `triggerItemRefresh`, category rules, merchants and the
+ * intelligence endpoints `fetchItemInsights` / `enrichTransactions` /
+ * `fetchRecurringPayments`), plus the payment-initiation (ITP) surface under
+ * `/payments/*` — both the redirection journey (`createPaymentInitiation`,
+ * `executePix`) and the no-redirection FIDO journey (`createEnrollment`, …).
  *
  * The apiKey is managed internally (lazy `POST /auth`, cached, proactively
  * refreshed, retried on 401). Every method throws {@link MalvoApiError} on a
@@ -53,6 +55,15 @@ import type {
   Loan,
   MalvoClientOptions,
   MerchantsResponse,
+  AuthoriseFidoOptions,
+  CreateEnrollmentOptions,
+  CreateEnrollmentPaymentOptions,
+  CreatePaymentInitiationOptions,
+  Enrollment,
+  EnrollmentCallback,
+  ExecutePixOptions,
+  ListPaymentInitiationsFilters,
+  PaymentInitiation,
   PageFilters,
   PageResponse,
   Parameters,
@@ -436,6 +447,109 @@ export class MalvoClient {
   /** Detect recurring charges (subscriptions, salary, utilities) for an item. */
   fetchRecurringPayments(itemId: string): Promise<RecurringPayment[]> {
     return this.http.request("POST", "/recurring-payments", { body: { itemId } });
+  }
+
+  /* ----- Payments — redirection journey (ITP) ----------------------- */
+
+  /**
+   * Create a Pix payment initiation. Returns it with a single-use
+   * `authorizationUrl`; redirect the payer there to authorize at their bank.
+   */
+  createPaymentInitiation(
+    options: CreatePaymentInitiationOptions,
+  ): Promise<PaymentInitiation> {
+    return this.http.request("POST", "/payments/initiations", { body: options });
+  }
+
+  /** Fetch a payment initiation, reconciling its status from the provider. */
+  getPaymentInitiation(id: string): Promise<PaymentInitiation> {
+    return this.http.request("GET", `/payments/initiations/${id}`);
+  }
+
+  /** List payment initiations (newest first). */
+  listPaymentInitiations(
+    options: ListPaymentInitiationsFilters = {},
+  ): Promise<PageResponse<PaymentInitiation>> {
+    return this.http.request("GET", "/payments/initiations", {
+      query: { page: options.page, pageSize: options.pageSize },
+    });
+  }
+
+  /** Execute the Pix for an authorized initiation. */
+  executePix(id: string, options: ExecutePixOptions): Promise<PaymentInitiation> {
+    return this.http.request("POST", `/payments/initiations/${id}/pix`, { body: options });
+  }
+
+  /* ----- Payments — no-redirection journey (JSR/FIDO) --------------- */
+
+  /** Create a device binding (enrollment) for the FIDO journey. */
+  createEnrollment(options: CreateEnrollmentOptions): Promise<Enrollment> {
+    return this.http.request("POST", "/payments/enrollments", { body: options });
+  }
+
+  /** Fetch an enrollment, reconciling its status from the provider. */
+  getEnrollment(id: string): Promise<Enrollment> {
+    return this.http.request("GET", `/payments/enrollments/${id}`);
+  }
+
+  /** Exchange the holder-authorization redirect params for the enrollment. */
+  handleEnrollmentCallback(callback: EnrollmentCallback): Promise<{ status: string }> {
+    return this.http.request("POST", "/payments/enrollments/callback", {
+      body: { code: callback.code, id_token: callback.idToken, state: callback.state },
+    });
+  }
+
+  /** Retrieve the WebAuthn registration options for a validated enrollment. */
+  fidoRegistrationOptions(enrollmentId: string): Promise<unknown> {
+    return this.http.request(
+      "POST",
+      `/payments/enrollments/${enrollmentId}/fido-registration-options`,
+    );
+  }
+
+  /** Register the WebAuthn credential (enrollment becomes AUTHORISED on success). */
+  fidoRegistration(enrollmentId: string, credential: unknown): Promise<Enrollment> {
+    return this.http.request("POST", `/payments/enrollments/${enrollmentId}/fido-registration`, {
+      body: { credential },
+    });
+  }
+
+  /** Create a FIDO-authorized (v4) payment initiation bound to an enrollment. */
+  createEnrollmentPaymentInitiation(
+    enrollmentId: string,
+    options: CreateEnrollmentPaymentOptions,
+  ): Promise<PaymentInitiation> {
+    return this.http.request("POST", `/payments/enrollments/${enrollmentId}/initiations`, {
+      body: options,
+    });
+  }
+
+  /** Retrieve the WebAuthn assertion options to authorize a payment. */
+  fidoSignOptions(paymentInitiationId: string): Promise<unknown> {
+    return this.http.request(
+      "POST",
+      `/payments/initiations/${paymentInitiationId}/fido-sign-options`,
+    );
+  }
+
+  /** Authorize a payment with a FIDO assertion. */
+  authoriseFido(
+    paymentInitiationId: string,
+    options: AuthoriseFidoOptions,
+  ): Promise<PaymentInitiation> {
+    return this.http.request("POST", `/payments/initiations/${paymentInitiationId}/authorise`, {
+      body: { processPix: options.processPix ?? false, assertion: options.assertion },
+    });
+  }
+
+  /** Execute the Pix for a FIDO-authorized (v4) initiation. */
+  executePixV4(
+    paymentInitiationId: string,
+    options: ExecutePixOptions,
+  ): Promise<PaymentInitiation> {
+    return this.http.request("POST", `/payments/initiations/${paymentInitiationId}/pix-v4`, {
+      body: options,
+    });
   }
 }
 

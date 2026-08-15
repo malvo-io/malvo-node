@@ -135,10 +135,10 @@ export type WebhookTriggeredBy = "USER" | "CLIENT" | "SYNC" | "INTERNAL";
 
 /**
  * Every `event` value the API accepts on `POST /webhooks`. The
- * `payment_intent/*`, `scheduled_payment/*`, `automatic_pix_payment/*`,
- * `smart_transfer_*` and `payment_request/*` values are accepted for wire
- * compatibility but are **never fired** by Malvo (no payment initiation).
- * See {@link FiredWebhookEventType} for the subset actually emitted.
+ * `payment_intent/*` values are fired by the payment-initiation (ITP) flow; the
+ * `scheduled_payment/*`, `automatic_pix_payment/*`, `smart_transfer_*` and
+ * `payment_request/*` values are accepted for wire compatibility but are
+ * **never fired**. See {@link FiredWebhookEventType} for the subset emitted.
  */
 export type WebhookEventType =
   | "all"
@@ -147,10 +147,6 @@ export type WebhookEventType =
   | "scheduled_payment/all_completed"
   | "scheduled_payment/all_created"
   | "boleto/updated"
-  | "payment_intent/created"
-  | "payment_intent/waiting_payer_authorization"
-  | "payment_intent/completed"
-  | "payment_intent/error"
   | "scheduled_payment/created"
   | "scheduled_payment/completed"
   | "scheduled_payment/error"
@@ -176,7 +172,11 @@ export type FiredWebhookEventType =
   | "transactions/created"
   | "transactions/updated"
   | "transactions/deleted"
-  | "connector/status_updated";
+  | "connector/status_updated"
+  | "payment_intent/created"
+  | "payment_intent/waiting_payer_authorization"
+  | "payment_intent/completed"
+  | "payment_intent/error";
 
 /* ------------------------------------------------------------------ */
 /* Connectors                                                          */
@@ -1182,3 +1182,125 @@ export interface CreateWebhookRequest {
 
 /** @deprecated Use {@link UpdateWebhook}. */
 export type UpdateWebhookRequest = UpdateWebhook;
+
+/* ----- Payments (ITP — Pix payment initiation) --------------------------- */
+
+/** Local Pix instrument for a payment initiation. */
+export type LocalInstrument = "DICT" | "QRDN" | "QRES" | "MANU" | "INIC";
+
+/** Beneficiary of a Pix payment. */
+export interface PaymentCreditor {
+  cpfCnpj: string;
+  personType: "PESSOA_NATURAL" | "PESSOA_JURIDICA";
+  name: string;
+}
+
+/** Beneficiary account (required for Pix execution). */
+export interface CreditorAccount {
+  ispb?: string;
+  issuer?: string;
+  number?: string;
+  accountType?: "CACC" | "SVGS" | "SLRY" | "TRAN";
+}
+
+/**
+ * A Pix payment initiation tracked by Malvo. `consentStatus` runs the
+ * authorization machine (AWAITING_AUTHORISATION → AUTHORISED → CONSUMED /
+ * REJECTED); `paymentStatus` runs the settlement machine (RCVD/PDNG/ACSP → ACSC
+ * / RJCT). A CONSUMED consent does NOT imply settlement — only `paymentStatus`
+ * `ACSC` does.
+ */
+export interface PaymentInitiation {
+  id: string;
+  brandId: string;
+  cpf: string;
+  amount: string;
+  remittanceInformation?: string;
+  creditor: PaymentCreditor;
+  /** Set on no-redirection (JSR) initiations, linking the authorizing enrollment. */
+  enrollmentId?: string;
+  providerId?: string;
+  consentId?: string;
+  /** Single-use; redirect the payer here (redirection journey). */
+  authorizationUrl?: string;
+  consentStatus: string;
+  paymentStatus?: string;
+  endToEndId?: string;
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A no-redirection (JSR/FIDO) device binding. */
+export interface Enrollment {
+  id: string;
+  brandId: string;
+  cpf: string;
+  rp: string;
+  platform: string;
+  providerId?: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePaymentInitiationOptions {
+  brandId: string;
+  cpf: string;
+  amount: string;
+  redirectUrl: string;
+  creditor: PaymentCreditor;
+  /** Defaults to `DICT`. */
+  localInstrument?: LocalInstrument;
+  /** Pix key — required for `DICT`. */
+  proxy?: string;
+  remittanceInformation?: string;
+}
+
+export interface ExecutePixOptions {
+  endToEndId: string;
+  cnpjInitiator: string;
+  creditorAccount: CreditorAccount;
+  authorisationFlow?: string;
+  localInstrument?: LocalInstrument;
+  proxy?: string;
+}
+
+export type ListPaymentInitiationsFilters = PageFilters;
+
+export interface CreateEnrollmentOptions {
+  brandId: string;
+  cpf: string;
+  redirectUrl: string;
+  rp: string;
+  platform: string;
+  cnpj?: string;
+}
+
+export interface EnrollmentCallback {
+  code: string;
+  idToken: string;
+  state: string;
+}
+
+export interface CreateEnrollmentPaymentOptions {
+  amount: string;
+  /** Defaults to the enrollment's brand. */
+  brandId?: string;
+  /** Defaults to the enrollment's CPF. */
+  cpf?: string;
+  redirectUrl?: string;
+  date?: string;
+  localInstrument?: LocalInstrument;
+  proxy?: string;
+  remittanceInformation?: string;
+  creditor?: PaymentCreditor;
+  creditorAccount?: CreditorAccount;
+}
+
+export interface AuthoriseFidoOptions {
+  /** The WebAuthn assertion from `navigator.credentials.get()`. */
+  assertion: unknown;
+  /** Execute the Pix together with the authorization. */
+  processPix?: boolean;
+}

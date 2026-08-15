@@ -3,11 +3,13 @@
 Node.js / TypeScript **server SDK** for the [Malvo](https://malvo.io) API
 (Open Finance Brasil). One `MalvoClient` class manages the apiKey lifecycle and
 exposes one method per endpoint: connectors, items, accounts, transactions,
-investments, loans, bills, identity, categories, consents, webhooks and
-merchants — plus minting connect tokens for the hosted widget.
+investments, loans, bills, identity, categories, consents, webhooks,
+merchants and **Pix payment initiation** — plus minting connect tokens for the
+hosted widget.
 
-Talks to a single host: `https://api.malvo.io`. **Data aggregation only** — no
-payment initiation.
+Talks to a single host: `https://api.malvo.io`. Data aggregation **and** Pix
+payment initiation (ITP): Malvo never holds funds — the payment is executed by
+the payer's own institution and settles directly between accounts.
 
 Methods take **positional** arguments and return paged envelopes:
 
@@ -99,6 +101,41 @@ Or grab a single page: `fetchTransactions(accountId, options)` (page-based,
 `{ results, total, page, totalPages }`) or `fetchTransactionsCursor(accountId,
 options)` (cursor-based, `{ results, next }`). For huge accounts,
 `streamTransactions(accountId)` is an async iterator that pages lazily.
+
+## Payments (Pix initiation)
+
+Initiate a Pix from the payer's account at another institution. Two journeys:
+
+**With redirection** — create the initiation, redirect the payer to the returned
+`authorizationUrl`, then execute:
+
+```ts
+const initiation = await malvo.createPaymentInitiation({
+  brandId: connector.fstBrandId!,
+  cpf: "12345678909",
+  amount: "10.00",
+  redirectUrl: "https://app.example.com/pix/callback",
+  proxy: "beneficiario@example.com", // Pix key (DICT)
+  creditor: { cpfCnpj: "98765432100", personType: "PESSOA_NATURAL", name: "Maria" },
+});
+// → redirect the payer to initiation.authorizationUrl
+
+// after the payer authorizes:
+await malvo.executePix(initiation.id, {
+  endToEndId: "E00000000202608141200kkkkkkkkkkk",
+  cnpjInitiator: "00000000000000",
+  creditorAccount: { ispb: "00000000", number: "123", accountType: "CACC" },
+});
+
+// reconcile settlement (CONSUMED ≠ settled; only paymentStatus "ACSC" is):
+const status = await malvo.getPaymentInitiation(initiation.id);
+```
+
+**Without redirection (FIDO)** — bind a device once, then authorize payments with
+a WebAuthn assertion: `createEnrollment` → `fidoRegistrationOptions` /
+`fidoRegistration` → `createEnrollmentPaymentInitiation` → `fidoSignOptions` /
+`authoriseFido` → `executePixV4`. The WebAuthn ceremony runs in the payer's
+browser; pass the resulting credential/assertion straight through.
 
 ## Error handling
 
