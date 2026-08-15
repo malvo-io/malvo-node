@@ -1,3 +1,20 @@
+## 0.3.0
+
+**Pix payment initiation (ITP).** The SDK is no longer data-only — it now covers
+the `/payments/*` surface. Malvo never holds funds; the payment is executed by
+the payer's institution and settles directly between accounts.
+
+- **New — redirection journey:** `createPaymentInitiation`, `getPaymentInitiation`
+  (reconciles status), `listPaymentInitiations`, `executePix`.
+- **New — no-redirection (JSR/FIDO) journey:** `createEnrollment`,
+  `getEnrollment`, `handleEnrollmentCallback`, `fidoRegistrationOptions`,
+  `fidoRegistration`, `createEnrollmentPaymentInitiation`, `fidoSignOptions`,
+  `authoriseFido`, `executePixV4`.
+- **New types:** `PaymentInitiation`, `Enrollment`, `PaymentCreditor`,
+  `CreditorAccount`, `LocalInstrument` and the request-option interfaces.
+- `payment_intent/*` moved into `FiredWebhookEventType` — these events are now
+  emitted by the payment-initiation flow (previously accepted but never fired).
+
 ## 0.2.1
 
 Wire-parity fixes from an endpoint-by-endpoint audit against the backend's
