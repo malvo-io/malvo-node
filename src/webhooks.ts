@@ -1,12 +1,11 @@
 /**
  * Typed webhook payloads.
  *
- * Malvo webhooks carry **no HMAC signature** — secure your endpoint with the
- * custom `headers` you register on the webhook (e.g. a bearer secret) and/or by
- * allowlisting Malvo's egress IP (shown in the Dashboard). Always deduplicate by
- * `eventId`, and treat the webhook as the source of truth (re-fetch the affected
- * resources before acting).
+ * Verify `Malvo-Signature` with {@link verifyWebhookSignature} before parsing.
+ * Custom headers and the static egress IP remain defense in depth. Always
+ * deduplicate by `eventId`.
  */
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FiredWebhookEventType, WebhookTriggeredBy } from "./types";
 
 interface BaseWebhookEvent {
@@ -68,12 +67,89 @@ const FIRED_EVENTS = new Set<FiredWebhookEventType>([
   "connector/status_updated",
 ]);
 
+export class WebhookSignatureError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WebhookSignatureError";
+  }
+}
+
+function payloadBytes(payload: string | Uint8Array): Buffer {
+  return typeof payload === "string" ? Buffer.from(payload, "utf8") : Buffer.from(payload);
+}
+
+function macHex(secret: string, unix: number, payload: Buffer): string {
+  return createHmac("sha256", secret).update(String(unix)).update(".").update(payload).digest("hex");
+}
+
+function parseSignatureHeader(header: string): { unix: number; versions: string[] } {
+  const trimmed = header.trim();
+  if (!trimmed) {
+    throw new WebhookSignatureError("missing Malvo-Signature header");
+  }
+  let unix = 0;
+  const versions: string[] = [];
+  for (const part of trimmed.split(",")) {
+    const cut = part.trim().indexOf("=");
+    if (cut <= 0) {
+      throw new WebhookSignatureError("malformed Malvo-Signature header");
+    }
+    const key = part.trim().slice(0, cut);
+    const value = part.trim().slice(cut + 1);
+    if (!value) {
+      throw new WebhookSignatureError("malformed Malvo-Signature header");
+    }
+    if (key === "t") {
+      unix = Number.parseInt(value, 10);
+      if (!Number.isFinite(unix)) {
+        throw new WebhookSignatureError("malformed Malvo-Signature timestamp");
+      }
+    } else if (key === "v1") {
+      versions.push(value.toLowerCase());
+    }
+  }
+  if (unix === 0 || versions.length === 0) {
+    throw new WebhookSignatureError("malformed Malvo-Signature header");
+  }
+  return { unix, versions };
+}
+
+/**
+ * Verify `Malvo-Signature` over the raw HTTP body. Pass the exact bytes
+ * received — never `JSON.stringify` a parsed object.
+ */
+export function verifyWebhookSignature(
+  payload: string | Uint8Array,
+  header: string,
+  secret: string | readonly string[],
+  options?: { toleranceSeconds?: number; now?: Date },
+): void {
+  const { unix, versions } = parseSignatureHeader(header);
+  const tolerance = options?.toleranceSeconds ?? 300;
+  const now = Math.floor((options?.now ?? new Date()).getTime() / 1000);
+  if (Math.abs(now - unix) > tolerance) {
+    throw new WebhookSignatureError("webhook signature timestamp is outside the tolerance");
+  }
+  const body = payloadBytes(payload);
+  const secrets = (Array.isArray(secret) ? secret : [secret]).filter((item) => item.length > 0);
+  for (const candidate of secrets) {
+    const expected = Buffer.from(macHex(candidate, unix, body), "utf8");
+    for (const got of versions) {
+      const actual = Buffer.from(got, "utf8");
+      if (expected.length === actual.length && timingSafeEqual(expected, actual)) {
+        return;
+      }
+    }
+  }
+  throw new WebhookSignatureError("invalid webhook signature");
+}
+
 /**
  * Validate and narrow a parsed webhook body to a {@link WebhookEvent}.
  *
  * Accepts an already-parsed object or a raw JSON string. Throws `TypeError` if
- * the payload is malformed or carries an unknown `event`. Does NOT verify any
- * signature (Malvo webhooks have none — see the module docs).
+ * the payload is malformed or carries an unknown `event`. Does not verify
+ * HMAC — call {@link verifyWebhookSignature} first.
  */
 export function parseWebhookEvent(body: unknown): WebhookEvent {
   const payload: unknown = typeof body === "string" ? safeParse(body) : body;
