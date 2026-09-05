@@ -1,3 +1,9 @@
+## 0.3.0
+
+- `verifyWebhookSignature(payload, header, secret)` validates `Malvo-Signature`
+  (HMAC-SHA256 of `{t}.{raw body}`, 5-minute timestamp window, dual-secret
+  rotation). `parseWebhookEvent` is unchanged and still does not verify HMAC.
+
 ## 0.2.1
 
 Wire-parity fixes from an endpoint-by-endpoint audit against the backend's

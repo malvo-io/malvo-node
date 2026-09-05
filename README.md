@@ -125,21 +125,37 @@ to `maxRetries` times respecting `Retry-After`.
 ## Webhooks
 
 ```ts
-import { parseWebhookEvent } from "@malvo/server";
+import {
+  verifyWebhookSignature,
+  parseWebhookEvent,
+  WebhookSignatureError,
+} from "@malvo/server";
 
-app.post("/webhooks/malvo", express.json(), (req, res) => {
-  const event = parseWebhookEvent(req.body); // typed, throws on malformed input
-  res.sendStatus(200); // ack fast; deduplicate by event.eventId
-
+app.post("/webhooks/malvo", express.raw({ type: "application/json" }), async (req, res) => {
+  const secret = process.env.MALVO_WEBHOOK_SECRET;
+  const previous = process.env.MALVO_WEBHOOK_SECRET_PREV;
+  if (!secret) return res.sendStatus(500);
+  try {
+    verifyWebhookSignature(
+      req.body,
+      req.header("malvo-signature") ?? "",
+      previous ? [secret, previous] : secret,
+    );
+  } catch (err) {
+    if (err instanceof WebhookSignatureError) return res.sendStatus(401);
+    throw err;
+  }
+  const event = parseWebhookEvent(JSON.parse(Buffer.from(req.body).toString("utf8")));
+  res.sendStatus(200);
   if (event.event === "transactions/created") {
     // re-fetch the affected account's transactions
   }
 });
 ```
 
-Malvo webhooks have **no HMAC signature** — secure the endpoint with the custom
-`headers` you register (e.g. a bearer secret) and/or by allowlisting Malvo's
-egress IP from the Dashboard.
+Verify `Malvo-Signature` over the **raw** body (`express.raw`, never `express.json()`).
+`parseWebhookEvent` does not check HMAC. During rotation pass `[current, previous]`.
+See https://docs.malvo.io/webhooks/security.
 
 > **Webhooks are the source of truth.** Persist connections and data from the
 > `item/*` and `transactions/*` webhooks; don't rely on a single response.

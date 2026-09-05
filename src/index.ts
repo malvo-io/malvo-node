@@ -5,7 +5,7 @@
  */
 export { MalvoClient } from "./client";
 export { MalvoApiError } from "./errors";
-export { parseWebhookEvent } from "./webhooks";
+export { parseWebhookEvent, verifyWebhookSignature, WebhookSignatureError } from "./webhooks";
 export type {
   WebhookEvent,
   ItemWebhookEvent,
