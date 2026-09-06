@@ -18,6 +18,8 @@ export type QueryValue = string | number | boolean | string[] | number[] | undef
 export type Query = Record<string, QueryValue>;
 
 export interface RequestOptions {
+
+  responseType?: "json" | "text";
   query?: Query;
   body?: unknown;
   /** Attach the apiKey (and auto-authenticate). Default `true`. */
@@ -139,6 +141,8 @@ export class HttpClient {
       }
 
       if (res.status === 204) return undefined as T;
+
+      if (res.ok && opts.responseType === "text") return await res.text() as T;
 
       const data = await this.parse(res);
       if (!res.ok) throw this.toError(res, data);

@@ -13,3 +13,4 @@ export type {
   ConnectorStatusWebhookEvent,
 } from "./webhooks";
 export * from "./types";
+export * from "./fiscal";

@@ -163,3 +163,31 @@ See https://docs.malvo.io/webhooks/security.
 ## Docs
 
 Full reference: <https://malvo.io/docs/sdks/node>
+
+## Dados fiscais
+
+A API fiscal precisa estar implantada no ambiente usado pelo SDK. Crie uma conexão por
+cliente e abra `connectUrl` para obter a autorização fiscal:
+
+```ts
+const connection = await malvo.createFiscalConnection({
+  cnpj: "11222333000181",
+  authorState: "SP",
+  clientUserId: "customer-123",
+  purpose: "Conciliação fiscal da empresa",
+});
+const { connectUrl } = await malvo.createFiscalConnectToken(connection.id);
+```
+
+Após a autorização, consulte `fetchFiscalStatus`, `fetchFiscalDocuments`,
+`fetchFiscalDocument`, `fetchFiscalDocumentXml` e `fetchFiscalDocumentChanges`.
+A listagem retorna `{ data, nextCursor }`. No feed incremental, pare quando `data`
+estiver vazio e preserve o último cursor, que continua preenchido no fim.
+`triggerFiscalRefresh` solicita atualização assíncrona; `revokeFiscalConnection`
+revoga apenas o acesso daquela aplicação.
+
+O sandbox usa dados fictícios sem certificado. Os eventos `fiscal/connection_updated`,
+`fiscal/documents_updated`, `fiscal/sync_completed` e `fiscal/sync_failed` são aceitos
+por `createWebhook` e `parseWebhookEvent`. Verifique o HMAC antes de processar o evento.
+Consulte o [guia fiscal](https://docs.malvo.io/guides/fiscal-data) para filtros,
+autorização, paginação e requisitos operacionais.

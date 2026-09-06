@@ -32,8 +32,9 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
-    "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/webhooks.test.ts"
+    "typecheck": "tsc --noEmit --allowImportingTsExtensions",
+    "type-check": "npm run typecheck",
+    "test": "npm run build && node --test test/*.test.mjs && node --experimental-strip-types --test src/webhooks.test.ts"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

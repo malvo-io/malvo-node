@@ -25,6 +25,7 @@
  * non-2xx response.
  */
 import { HttpClient } from "./http";
+import type { CreateFiscalConnectionRequest, FiscalConnection, FiscalConnectToken, FiscalDocument, FiscalDocumentFilters, FiscalPage, FiscalPageFilters, FiscalStatus } from "./fiscal";
 import type {
   Account,
   AccountBalance,
@@ -71,6 +72,50 @@ export class MalvoClient {
 
   constructor(options: MalvoClientOptions) {
     this.http = new HttpClient(options);
+  }
+
+  createFiscalConnection(body: CreateFiscalConnectionRequest): Promise<FiscalConnection> {
+    return this.http.request("POST", "/fiscal/connections", { body });
+  }
+
+  fetchFiscalConnections(filters: FiscalPageFilters & { clientUserId?: string } = {}): Promise<FiscalPage<FiscalConnection>> {
+    return this.http.request("GET", "/fiscal/connections", { query: { ...filters } });
+  }
+
+  fetchFiscalConnection(id: string): Promise<FiscalConnection> {
+    return this.http.request("GET", `/fiscal/connections/${encodeURIComponent(id)}`);
+  }
+
+  revokeFiscalConnection(id: string): Promise<void> {
+    return this.http.request("DELETE", `/fiscal/connections/${encodeURIComponent(id)}`);
+  }
+
+  createFiscalConnectToken(id: string, options: { integratorOrigin?: string } = {}): Promise<FiscalConnectToken> {
+    return this.http.request("POST", `/fiscal/connections/${encodeURIComponent(id)}/connect_token`, { body: options });
+  }
+
+  fetchFiscalStatus(id: string): Promise<FiscalStatus> {
+    return this.http.request("GET", `/fiscal/connections/${encodeURIComponent(id)}/status`);
+  }
+
+  triggerFiscalRefresh(id: string): Promise<{ connectionId: string; status: "QUEUED" }> {
+    return this.http.request("POST", `/fiscal/connections/${encodeURIComponent(id)}/refresh`);
+  }
+
+  fetchFiscalDocuments(id: string, filters: FiscalDocumentFilters = {}): Promise<FiscalPage<FiscalDocument>> {
+    return this.http.request("GET", `/fiscal/connections/${encodeURIComponent(id)}/documents`, { query: { ...filters } });
+  }
+
+  fetchFiscalDocumentChanges(id: string, filters: FiscalPageFilters = {}): Promise<FiscalPage<FiscalDocument>> {
+    return this.http.request("GET", `/fiscal/connections/${encodeURIComponent(id)}/documents/changes`, { query: { ...filters } });
+  }
+
+  fetchFiscalDocument(id: string, accessKey: string): Promise<FiscalDocument> {
+    return this.http.request("GET", `/fiscal/connections/${encodeURIComponent(id)}/documents/${encodeURIComponent(accessKey)}`);
+  }
+
+  fetchFiscalDocumentXml(id: string, accessKey: string): Promise<string> {
+    return this.http.request("GET", `/fiscal/connections/${encodeURIComponent(id)}/documents/${encodeURIComponent(accessKey)}/xml`, { responseType: "text" });
   }
 
   /** Authenticate eagerly (optional warm-up). Auth otherwise happens lazily. */

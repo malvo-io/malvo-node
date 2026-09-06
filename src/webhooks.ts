@@ -6,6 +6,7 @@
  * deduplicate by `eventId`.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { FiscalWebhookEvent } from "./fiscal";
 import type { FiredWebhookEventType, WebhookTriggeredBy } from "./types";
 
 interface BaseWebhookEvent {
@@ -50,11 +51,16 @@ export interface ConnectorStatusWebhookEvent extends BaseWebhookEvent {
 
 /** Discriminated union of every webhook event Malvo emits, keyed on `event`. */
 export type WebhookEvent =
+  | FiscalWebhookEvent
   | ItemWebhookEvent
   | TransactionsWebhookEvent
   | ConnectorStatusWebhookEvent;
 
 const FIRED_EVENTS = new Set<FiredWebhookEventType>([
+  "fiscal/connection_updated",
+  "fiscal/documents_updated",
+  "fiscal/sync_completed",
+  "fiscal/sync_failed",
   "item/created",
   "item/updated",
   "item/error",
@@ -162,6 +168,12 @@ export function parseWebhookEvent(body: unknown): WebhookEvent {
   }
   if (typeof (payload as { eventId?: unknown }).eventId !== "string") {
     throw new TypeError("Invalid webhook payload: missing eventId.");
+  }
+  if (event.startsWith("fiscal/")) {
+    const fiscal = payload as { connectionId?: unknown; clientUserId?: unknown };
+    if (typeof fiscal.connectionId !== "string" || !fiscal.connectionId || typeof fiscal.clientUserId !== "string" || !fiscal.clientUserId) {
+      throw new TypeError("Invalid fiscal webhook payload: missing connectionId or clientUserId.");
+    }
   }
   return payload as WebhookEvent;
 }
