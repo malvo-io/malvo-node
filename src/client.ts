@@ -25,7 +25,7 @@
  * non-2xx response.
  */
 import { HttpClient } from "./http";
-import type { CreateFiscalConnectionRequest, FiscalConnection, FiscalConnectToken, FiscalDocument, FiscalDocumentFilters, FiscalPage, FiscalPageFilters, FiscalStatus } from "./fiscal";
+import type { UpdateFiscalConnectionRequest, CreateFiscalConnectionRequest, FiscalConnection, FiscalConnectToken, FiscalDocument, FiscalDocumentFilters, FiscalPage, FiscalPageFilters, FiscalStatus } from "./fiscal";
 import type {
   Account,
   AccountBalance,
@@ -84,6 +84,10 @@ export class MalvoClient {
 
   fetchFiscalConnection(id: string): Promise<FiscalConnection> {
     return this.http.request("GET", `/fiscal/connections/${encodeURIComponent(id)}`);
+  }
+
+  updateFiscalConnection(id: string, body: UpdateFiscalConnectionRequest): Promise<FiscalConnection> {
+    return this.http.request("PATCH", `/fiscal/connections/${encodeURIComponent(id)}`, { body });
   }
 
   revokeFiscalConnection(id: string): Promise<void> {

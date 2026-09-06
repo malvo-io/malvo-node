@@ -175,6 +175,7 @@ const connection = await malvo.createFiscalConnection({
   authorState: "SP",
   clientUserId: "customer-123",
   purpose: "Conciliação fiscal da empresa",
+  notificationEmail: "responsavel@example.com",
 });
 const { connectUrl } = await malvo.createFiscalConnectToken(connection.id);
 ```
@@ -191,3 +192,9 @@ O sandbox usa dados fictícios sem certificado. Os eventos `fiscal/connection_up
 por `createWebhook` e `parseWebhookEvent`. Verifique o HMAC antes de processar o evento.
 Consulte o [guia fiscal](https://docs.malvo.io/guides/fiscal-data) para filtros,
 autorização, paginação e requisitos operacionais.
+
+Os alertas de certificado usam `notificationEmail`, opcional e editável com
+`updateFiscalConnection(connection.id, { notificationEmail: "novo@example.com" })`.
+Envie uma string vazia para desativar. Em produção, o responsável recebe avisos nos
+marcos de 30, 15, 7 e 1 dia antes do vencimento, além do aviso de certificado vencido,
+com link de renovação válido por sete dias. O sandbox não envia esses e-mails.

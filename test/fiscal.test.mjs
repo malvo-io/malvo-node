@@ -43,3 +43,18 @@ test('fiscal webhook parsing requires connection identity', () => {
     assert.throws(() => parseWebhookEvent({ event, eventId: 'event-1' }), TypeError);
   }
 });
+
+test('certificate notification contact can be set and removed per fiscal connection', async () => {
+  const calls=[];
+  const client=new MalvoClient({clientId:'client',clientSecret:'test-secret',fetch:async (url,init)=>{
+    if(String(url).endsWith('/auth')) return Response.json({apiKey:'api-test-key'});
+    calls.push({url:String(url),...init});
+    return Response.json({id:'connection',notificationEmail:JSON.parse(init.body).notificationEmail});
+  }});
+  await client.createFiscalConnection({cnpj:'11222333000181',clientUserId:'customer',purpose:'Conciliação',notificationEmail:'responsavel@example.com'});
+  assert.equal((await client.updateFiscalConnection('connection',{notificationEmail:''})).notificationEmail,'');
+  assert.equal(calls[1].method,'PATCH');
+  assert.ok(calls[1].url.endsWith('/fiscal/connections/connection'));
+  assert.deepEqual(JSON.parse(calls[1].body),{notificationEmail:''});
+  assert.equal(JSON.parse(calls[0].body).notificationEmail,'responsavel@example.com');
+});

@@ -1,6 +1,7 @@
 export type FiscalConnectionStatus = "PENDING_AUTHORIZATION" | "ACTIVE" | "REVOKED";
 
 export interface FiscalConnection {
+  notificationEmail?: string;
   id: string;
   cnpj: string;
   authorState: string;
@@ -15,6 +16,7 @@ export interface FiscalConnection {
 }
 
 export interface CreateFiscalConnectionRequest {
+  notificationEmail?: string;
   cnpj: string;
   authorState?: string;
   clientUserId: string;
@@ -93,4 +95,8 @@ export interface FiscalWebhookEvent {
   sandbox?: boolean;
   code?: string;
   operation?: string;
+}
+
+export interface UpdateFiscalConnectionRequest {
+  notificationEmail: string;
 }
