@@ -25,7 +25,9 @@
  * non-2xx response.
  */
 import { HttpClient } from "./http";
+import { FiscalIssuanceApi } from "./issuanceClient";
 import type { UpdateFiscalConnectionRequest, CreateFiscalConnectionRequest, FiscalConnection, FiscalConnectToken, FiscalDocument, FiscalDocumentFilters, FiscalPage, FiscalPageFilters, FiscalStatus } from "./fiscal";
+import type { FiscalEventPage, FiscalSandboxScenarioId, FiscalSandboxScenarioState, PlatformWebhookEvent, WebhookDelivery, WebhookDeliveryPage, WebhookSecretRotation } from "./issuance";
 import type {
   Account,
   AccountBalance,
@@ -70,8 +72,12 @@ import type {
 export class MalvoClient {
   private readonly http: HttpClient;
 
+  /** NF-e issuance in homologation: issuers, documents, events and taxation. */
+  readonly issuance: FiscalIssuanceApi;
+
   constructor(options: MalvoClientOptions) {
     this.http = new HttpClient(options);
+    this.issuance = new FiscalIssuanceApi(this.http);
   }
 
   createFiscalConnection(body: CreateFiscalConnectionRequest): Promise<FiscalConnection> {
@@ -120,6 +126,59 @@ export class MalvoClient {
 
   fetchFiscalDocumentXml(id: string, accessKey: string): Promise<string> {
     return this.http.request("GET", `/fiscal/connections/${encodeURIComponent(id)}/documents/${encodeURIComponent(accessKey)}/xml`, { responseType: "text" });
+  }
+
+  /* ----- Webhook operation ------------------------------------------ */
+
+  /**
+   * Rotates the signing secret. It belongs to the **application**: rotating
+   * through one webhook rotates every webhook of that application. The replaced
+   * secret keeps verifying for 24 hours.
+   */
+  rotateWebhookSecret(webhookId: string): Promise<WebhookSecretRotation> {
+    return this.http.request("POST", `/webhooks/${encodeURIComponent(webhookId)}/secret-rotations`);
+  }
+
+  /** Sends a signed `webhook/test` event without running any fiscal operation. */
+  testWebhookDelivery(webhookId: string): Promise<WebhookDelivery> {
+    return this.http.request("POST", `/webhooks/${encodeURIComponent(webhookId)}/tests`);
+  }
+
+  fetchWebhookDeliveries(webhookId: string, filters: { cursor?: string; limit?: number } = {}): Promise<WebhookDeliveryPage> {
+    return this.http.request("GET", `/webhooks/${encodeURIComponent(webhookId)}/deliveries`, { query: { ...filters } });
+  }
+
+  fetchWebhookDelivery(webhookId: string, deliveryId: string): Promise<WebhookDelivery> {
+    return this.http.request("GET", `/webhooks/${encodeURIComponent(webhookId)}/deliveries/${encodeURIComponent(deliveryId)}`);
+  }
+
+  /** Requeues the event behind a delivery; the business operation is not repeated. */
+  replayWebhookDelivery(webhookId: string, deliveryId: string): Promise<PlatformWebhookEvent> {
+    return this.http.request("POST", `/webhooks/${encodeURIComponent(webhookId)}/deliveries/${encodeURIComponent(deliveryId)}/replays`);
+  }
+
+  fetchFiscalEvents(filters: { cursor?: string; limit?: number } = {}): Promise<FiscalEventPage> {
+    return this.http.request("GET", "/fiscal/events", { query: { ...filters } });
+  }
+
+  /* ----- Sandbox scenarios ------------------------------------------ */
+
+  /**
+   * Chooses what the sandbox answers — a cancelled document, an empty capture, a
+   * failed sync, a certificate about to expire. Sandbox applications only.
+   * Without `connectionId` the choice covers every connection of the application.
+   */
+  createFiscalSandboxScenario(scenario: FiscalSandboxScenarioId, connectionId?: string): Promise<FiscalSandboxScenarioState> {
+    return this.http.request("POST", "/fiscal/sandbox/scenarios", { body: connectionId ? { scenario, connectionId } : { scenario } });
+  }
+
+  fetchFiscalSandboxScenario(scenarioId: string): Promise<FiscalSandboxScenarioState> {
+    return this.http.request("GET", `/fiscal/sandbox/scenarios/${encodeURIComponent(scenarioId)}`);
+  }
+
+  /** Restores the default answers; no connection, document or event is removed. */
+  resetFiscalSandboxScenario(scenarioId: string): Promise<FiscalSandboxScenarioState> {
+    return this.http.request("POST", `/fiscal/sandbox/scenarios/${encodeURIComponent(scenarioId)}/resets`);
   }
 
   /** Authenticate eagerly (optional warm-up). Auth otherwise happens lazily. */

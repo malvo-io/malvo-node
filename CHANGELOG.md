@@ -1,3 +1,27 @@
+## 0.4.0
+
+- Webhook operation: `rotateWebhookSecret` (the signing secret belongs to the
+  application, so rotating through one webhook rotates all of them, and the
+  replaced secret keeps verifying for 24 hours), `testWebhookDelivery` (a signed
+  `webhook/test` event that runs no fiscal operation and is never replayable),
+  `fetchWebhookDeliveries` / `fetchWebhookDelivery` (every attempt with its
+  status, error, duration and a sanitized excerpt of the answer),
+  `replayWebhookDelivery` (requeues the event without repeating the business
+  operation) and `fetchFiscalEvents` (incremental cursor feed of fiscal events).
+- `malvo.issuance` covers the NF-e homologation surface: issuers, authorizations,
+  readiness and certificates, numbering series, drafts and pre-validation,
+  issuance with revisions, resolution and abort, artifacts and the authorized XML,
+  events (cancellation, correction letter, number invalidation), product, service
+  and customer catalogs, versioned tax profiles with explainable calculation, the
+  official code tables extracted from the NF-e schema, and the reconciliation of
+  issued notes with the receipts of the same client.
+- Every write sends an `Idempotency-Key` — supplied by the caller or generated —
+  and operations with optimistic concurrency take the expected version and send
+  `If-Match`.
+- `RequestOptions.headers` lets a call carry its own headers.
+- `fetchDanfe` returns the DANFE data model as JSON; the platform does not render
+  the PDF.
+
 ## 0.3.0
 
 - `verifyWebhookSignature(payload, header, secret)` validates `Malvo-Signature`

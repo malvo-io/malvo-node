@@ -193,6 +193,66 @@ por `createWebhook` e `parseWebhookEvent`. Verifique o HMAC antes de processar o
 Consulte o [guia fiscal](https://docs.malvo.io/guides/fiscal-data) para filtros,
 autorização, paginação e requisitos operacionais.
 
+## Emissão de NF-e (homologação)
+
+A emissão fica em `malvo.issuance`, com uma chamada por rota publicada. Tudo é
+resolvido por emissor, que amarra aplicação, cliente, CNPJ e ambiente:
+
+```ts
+const issuer = await malvo.issuance.createIssuer({
+  environment: "homologation",
+  clientUserId: "customer-123",
+  cnpj: "34163943000157",
+  authorState: "SP",
+  name: "Empresa de homologação",
+});
+
+await malvo.issuance.createNumberingSeries(issuer.id, { series: 1, nextNumber: 1 });
+
+const issuance = await malvo.issuance.create(issuer.id, {
+  series: 1,
+  externalReference: "pedido-42",
+  invoice,
+});
+
+const authorized = await malvo.issuance.fetch(issuer.id, issuance.id);
+if (authorized.state === "Authorized") {
+  const xml = await malvo.issuance.fetchXml(issuer.id, issuance.id);
+}
+```
+
+Toda escrita leva `Idempotency-Key`. O SDK gera uma quando você não informa, mas
+passe a sua própria quando quiser que a repetição seja provadamente o mesmo comando:
+`malvo.issuance.create(issuer.id, body, chaveDoPedido)`. Operações com concorrência
+otimista recebem a versão esperada como argumento e viram `If-Match`.
+
+A emissão em homologação exige autorização do responsável (`requestAuthorization`) e
+inscrição estadual credenciada na SEFAZ; sem ela a nota é rejeitada com 209 ou 203.
+
+`fetchDanfe` devolve os campos e o código de barras do DANFE em JSON, conforme o MOC.
+A plataforma não renderiza o PDF.
+
+Também estão disponíveis rascunhos e validação prévia, eventos (cancelamento, carta de
+correção e inutilização de numeração), catálogos de produtos, serviços e clientes,
+perfis fiscais versionados com cálculo explicável, as tabelas oficiais extraídas do
+schema da NF-e e a conciliação das notas emitidas com os recebimentos.
+
+## Operação dos webhooks
+
+`rotateWebhookSecret(webhookId)` devolve o novo segredo. Ele é **da aplicação**:
+rotacionar por um webhook troca o segredo de todos, e o anterior continua verificando
+por 24 horas, para você trocar sem perder evento. A resposta declara isso em `scope`.
+
+`testWebhookDelivery(webhookId)` envia um evento `webhook/test` assinado, sem executar
+nenhuma operação fiscal ou bancária. Não entra na fila e não é repetido.
+
+`fetchWebhookDeliveries(webhookId)` lista cada tentativa com o código devolvido, o erro,
+a duração e um excerto sanitizado da resposta. `replayWebhookDelivery(webhookId, deliveryId)`
+recoloca o evento na fila — a operação de negócio não é repetida. Uma entrega de teste não
+tem evento por trás e é recusada.
+
+`fetchFiscalEvents()` é o feed incremental por cursor dos eventos fiscais da aplicação.
+
 Os alertas de certificado usam `notificationEmail`, opcional e editável com
 `updateFiscalConnection(connection.id, { notificationEmail: "novo@example.com" })`.
 Envie uma string vazia para desativar. Em produção, o responsável recebe avisos nos
