@@ -18,8 +18,12 @@ export type QueryValue = string | number | boolean | string[] | number[] | undef
 export type Query = Record<string, QueryValue>;
 
 export interface RequestOptions {
+
+  responseType?: "json" | "text";
   query?: Query;
   body?: unknown;
+  /** Extra request headers, such as `Idempotency-Key` and `If-Match`. */
+  headers?: Record<string, string>;
   /** Attach the apiKey (and auto-authenticate). Default `true`. */
   auth?: boolean;
 }
@@ -121,7 +125,7 @@ export class HttpClient {
     let reauthed = false;
 
     for (let attempt = 0; ; attempt++) {
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { ...(opts.headers ?? {}) };
       if (useAuth) headers["X-API-KEY"] = await this.getApiKey();
 
       const res = await this.rawFetch(method, path, { ...opts, headers });
@@ -139,6 +143,8 @@ export class HttpClient {
       }
 
       if (res.status === 204) return undefined as T;
+
+      if (res.ok && opts.responseType === "text") return await res.text() as T;
 
       const data = await this.parse(res);
       if (!res.ok) throw this.toError(res, data);

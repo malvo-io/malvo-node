@@ -94,7 +94,6 @@ export type ExecutionStatus =
   | "USER_AUTHORIZATION_PENDING"
   | "USER_AUTHORIZATION_NOT_GRANTED"
   | "USER_AUTHORIZATION_REVOKED"
-  // eslint-disable-next-line @typescript-eslint/ban-types
   | (string & {});
 
 export type AccountType = "BANK" | "CREDIT";
@@ -167,6 +166,7 @@ export type WebhookEventType =
 
 /** The webhook events Malvo actually emits. */
 export type FiredWebhookEventType =
+  | import("./fiscal").FiscalWebhookEventType
   | "item/created"
   | "item/updated"
   | "item/error"

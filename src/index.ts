@@ -13,3 +13,6 @@ export type {
   ConnectorStatusWebhookEvent,
 } from "./webhooks";
 export * from "./types";
+export * from "./fiscal";
+export * from "./issuance";
+export { FiscalIssuanceApi } from "./issuanceClient";
