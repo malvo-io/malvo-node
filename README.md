@@ -155,6 +155,9 @@ app.post("/webhooks/malvo", express.raw({ type: "application/json" }), async (re
 
 Verify `Malvo-Signature` over the **raw** body (`express.raw`, never `express.json()`).
 `parseWebhookEvent` does not check HMAC. During rotation pass `[current, previous]`.
+It also accepts the dedicated `account_verification.completed` payload. That
+event is not registered through `POST /webhooks`; verify it with the same
+`Malvo-Signature` header.
 See https://docs.malvo.io/webhooks/security.
 
 > **Webhooks are the source of truth.** Persist connections and data from the

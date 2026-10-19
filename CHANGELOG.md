@@ -1,3 +1,10 @@
+## Unreleased
+
+- `parseWebhookEvent` accepts the dedicated `account_verification.completed`
+  payload (`schemaVersion` 1, `data.status` `completed`, and the contracted
+  check `result`/`reason` values). It is not a `POST /webhooks` subscription
+  event. `verifyWebhookSignature` is unchanged.
+
 ## 0.3.0
 
 - `verifyWebhookSignature(payload, header, secret)` validates `Malvo-Signature`
