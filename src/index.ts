@@ -11,5 +11,9 @@ export type {
   ItemWebhookEvent,
   TransactionsWebhookEvent,
   ConnectorStatusWebhookEvent,
+  AccountVerificationCompletedWebhookEvent,
+  AccountVerificationCheck,
+  AccountVerificationOutcome,
+  AccountVerificationReason,
 } from "./webhooks";
 export * from "./types";

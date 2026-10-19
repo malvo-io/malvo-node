@@ -48,11 +48,66 @@ export interface ConnectorStatusWebhookEvent extends BaseWebhookEvent {
   previousStatus?: string;
 }
 
+export type AccountVerificationOutcome = "match" | "partial" | "no_match";
+
+export type AccountVerificationReason =
+  | "equal"
+  | "normalized_equal"
+  | "abbreviated"
+  | "different"
+  | "not_requested"
+  | "missing_bank_data"
+  | "bank_unavailable"
+  | "format_ambiguous";
+
+export interface AccountVerificationCheck {
+  result: AccountVerificationOutcome;
+  reason: AccountVerificationReason;
+}
+
+/** Dedicated completion webhook. Not a `POST /webhooks` subscription event. */
+export interface AccountVerificationCompletedWebhookEvent {
+  event: "account_verification.completed";
+  eventId: string;
+  schemaVersion: 1;
+  occurredAt: string;
+  data: {
+    id: string;
+    status: "completed";
+    result: {
+      overallResult: AccountVerificationOutcome;
+      checks: {
+        bank: AccountVerificationCheck;
+        branch: AccountVerificationCheck;
+        account: AccountVerificationCheck;
+        document: AccountVerificationCheck;
+        name: AccountVerificationCheck;
+      };
+      maskedHolderName: string;
+    };
+  };
+}
+
 /** Discriminated union of every webhook event Malvo emits, keyed on `event`. */
 export type WebhookEvent =
   | ItemWebhookEvent
   | TransactionsWebhookEvent
-  | ConnectorStatusWebhookEvent;
+  | ConnectorStatusWebhookEvent
+  | AccountVerificationCompletedWebhookEvent;
+
+const ACCOUNT_VERIFICATION_COMPLETED = "account_verification.completed";
+const ACCOUNT_VERIFICATION_OUTCOMES = new Set<string>(["match", "partial", "no_match"]);
+const ACCOUNT_VERIFICATION_REASONS = new Set<string>([
+  "equal",
+  "normalized_equal",
+  "abbreviated",
+  "different",
+  "not_requested",
+  "missing_bank_data",
+  "bank_unavailable",
+  "format_ambiguous",
+]);
+const ACCOUNT_VERIFICATION_FIELDS = ["bank", "branch", "account", "document", "name"] as const;
 
 const FIRED_EVENTS = new Set<FiredWebhookEventType>([
   "item/created",
@@ -153,17 +208,75 @@ export function verifyWebhookSignature(
  */
 export function parseWebhookEvent(body: unknown): WebhookEvent {
   const payload: unknown = typeof body === "string" ? safeParse(body) : body;
-  if (typeof payload !== "object" || payload === null) {
+  if (!isRecord(payload)) {
     throw new TypeError("Invalid webhook payload: expected a JSON object.");
   }
-  const event = (payload as { event?: unknown }).event;
+  const event = payload.event;
+  if (event === ACCOUNT_VERIFICATION_COMPLETED) {
+    return parseAccountVerificationCompleted(payload);
+  }
   if (typeof event !== "string" || !FIRED_EVENTS.has(event as FiredWebhookEventType)) {
     throw new TypeError(`Invalid webhook payload: unknown event "${String(event)}".`);
   }
-  if (typeof (payload as { eventId?: unknown }).eventId !== "string") {
+  if (typeof payload.eventId !== "string") {
     throw new TypeError("Invalid webhook payload: missing eventId.");
   }
-  return payload as WebhookEvent;
+  return payload as unknown as WebhookEvent;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseAccountVerificationCompleted(
+  payload: Record<string, unknown>,
+): AccountVerificationCompletedWebhookEvent {
+  if (typeof payload.eventId !== "string") {
+    throw new TypeError("Invalid webhook payload: missing eventId.");
+  }
+  if (payload.schemaVersion !== 1) {
+    throw new TypeError("Invalid webhook payload: schemaVersion must be 1.");
+  }
+  if (typeof payload.occurredAt !== "string") {
+    throw new TypeError("Invalid webhook payload: missing occurredAt.");
+  }
+  if (!isRecord(payload.data)) {
+    throw new TypeError("Invalid webhook payload: missing data.");
+  }
+  const data = payload.data;
+  if (typeof data.id !== "string") {
+    throw new TypeError("Invalid webhook payload: missing data.id.");
+  }
+  if (data.status !== "completed") {
+    throw new TypeError('Invalid webhook payload: data.status must be "completed".');
+  }
+  if (!isRecord(data.result)) {
+    throw new TypeError("Invalid webhook payload: missing data.result.");
+  }
+  const result = data.result;
+  if (typeof result.overallResult !== "string" || !ACCOUNT_VERIFICATION_OUTCOMES.has(result.overallResult)) {
+    throw new TypeError("Invalid webhook payload: data.result.overallResult is invalid.");
+  }
+  if (!isRecord(result.checks)) {
+    throw new TypeError("Invalid webhook payload: missing data.result.checks.");
+  }
+  const checks = result.checks;
+  for (const field of ACCOUNT_VERIFICATION_FIELDS) {
+    const check = checks[field];
+    if (!isRecord(check)) {
+      throw new TypeError(`Invalid webhook payload: missing data.result.checks.${field}.`);
+    }
+    if (typeof check.result !== "string" || !ACCOUNT_VERIFICATION_OUTCOMES.has(check.result)) {
+      throw new TypeError(`Invalid webhook payload: data.result.checks.${field}.result is invalid.`);
+    }
+    if (typeof check.reason !== "string" || !ACCOUNT_VERIFICATION_REASONS.has(check.reason)) {
+      throw new TypeError(`Invalid webhook payload: data.result.checks.${field}.reason is invalid.`);
+    }
+  }
+  if (typeof result.maskedHolderName !== "string") {
+    throw new TypeError("Invalid webhook payload: missing data.result.maskedHolderName.");
+  }
+  return payload as unknown as AccountVerificationCompletedWebhookEvent;
 }
 
 function safeParse(text: string): unknown {
