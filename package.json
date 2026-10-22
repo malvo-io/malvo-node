@@ -32,8 +32,8 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
-    "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/webhooks.test.ts"
+    "typecheck": "tsc --noEmit --allowImportingTsExtensions",
+    "test": "node --experimental-strip-types --test src/webhooks.test.ts scripts/search-console/search-console.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
